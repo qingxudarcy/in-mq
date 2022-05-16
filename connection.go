@@ -100,12 +100,18 @@ func (connection *Connection) handleReInit(conn *amqp.Connection) bool {
 	}
 }
 
-// init will initialize channel & declare exhange & declare queue
+// init will initialize channel & declare exhange
 func (connection *Connection) init(conn *amqp.Connection) error {
 	ch, err := conn.Channel()
 	if err != nil {
 		return err
 	}
+
+	err = ch.Qos(connection.config.PrefetchCount, 0, false)
+	if err != nil {
+		connection.config.Logger.Printf("Failed to set quality of service, error: %s\n", err)
+	}
+
 	err = ch.Confirm(false)
 	if err != nil {
 		connection.config.Logger.Printf("Failed to confirm channel, error: %s\n", err)

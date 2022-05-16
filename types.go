@@ -10,6 +10,7 @@ type ConsumerHandler func(d []byte)
 type Logx interface {
 	Printf(format string, v ...interface{})
 	Println(v ...interface{})
+	Panicf(format string, v ...interface{})
 	Panic(v ...interface{})
 }
 

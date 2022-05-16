@@ -1,10 +1,13 @@
 package inmq
 
+import "github.com/streadway/amqp"
+
 type queue struct {
 	Exchange   string
 	Name       string
-	RoutingKey string
 	Option     *queueOption
+	RoutingKey []string
+	Args       amqp.Table
 }
 
 type queueOption struct {
@@ -57,15 +60,20 @@ func WithQueNowait(nowait bool) *queOption {
 	}
 }
 
-func NewQueue(exchange, name, routingKey string, opts ...queOption) *queue {
+func NewQueue(exchange, name string, routingKey []string, opts ...queOption) *queue {
 	option := defaultQueueOption
 	for _, opt := range opts {
 		opt.apply(option)
 	}
+
+	args := make(amqp.Table, 1)
+	args["x-queue-type"] = "classic"
+
 	return &queue{
 		Exchange:   exchange,
 		Name:       name,
 		RoutingKey: routingKey,
 		Option:     option,
+		Args:       args,
 	}
 }

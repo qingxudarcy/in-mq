@@ -12,10 +12,10 @@ type Producer struct {
 	Conn       *Connection
 }
 
-func NewProducer(routingKey, body string, conn *Connection) *Producer {
+func NewProducer(routingKey string, body []byte, conn *Connection) *Producer {
 	return &Producer{
 		RoutingKey: routingKey,
-		Body:       []byte(body),
+		Body:       body,
 		Conn:       conn,
 	}
 }
@@ -26,12 +26,15 @@ func NewProducer(routingKey, body string, conn *Connection) *Producer {
 // This will block until the server sends a confirm. Errors are
 // only returned if the push action itself fails, see UnsafePush.
 func (producer *Producer) Push() error {
-	defer producer.Conn.Close()
-	select {
-	case <-producer.Conn.session.ready:
-	case <-time.After(waitInitDelay):
-		return errNotConnected
+	// defer producer.Conn.Close()
+	if !producer.Conn.session.isReady {
+		select {
+		case <-producer.Conn.session.ready:
+		case <-time.After(waitInitDelay):
+			return errNotConnected
+		}
 	}
+
 	producer.Conn.config.Logger.Printf("Push message is %s", producer.Body)
 	times := 0
 	err := errSendMsg

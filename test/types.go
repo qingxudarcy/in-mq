@@ -6,10 +6,11 @@ var (
 
 	host     string = "localhost"
 	port     string = "5672"
-	vhost    string = "/test"
-	user     string = "test"
-	password string = "test"
+	vhost    string = "/in-mq"
+	user     string = ""
+	password string = ""
 
-	consumerName string = "test_consumer"
-	workers      int    = 2
+	queueName  string = "test_queue"
+	routingKey string = "in-test"
+	workers    int    = 2
 )

@@ -7,9 +7,10 @@ import (
 )
 
 type ConnConfig struct {
-	Heartbeat time.Duration // default: 20s
-	TimeOut   time.Duration // default: 30s
-	Logger    Logx
+	PrefetchCount int
+	Heartbeat     time.Duration // default: 20s
+	TimeOut       time.Duration // default: 30s
+	Logger        Logx
 }
 
 var defaultRcConfig = &ConnConfig{
@@ -42,6 +43,14 @@ func WithRcTimeOut(timeout time.Duration) *connOption {
 	return &connOption{
 		apply: func(rc *ConnConfig) {
 			rc.TimeOut = timeout
+		},
+	}
+}
+
+func WithRcQos(prefetchCount int) *connOption {
+	return &connOption{
+		apply: func(rc *ConnConfig) {
+			rc.PrefetchCount = prefetchCount
 		},
 	}
 }

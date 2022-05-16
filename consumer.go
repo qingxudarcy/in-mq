@@ -12,12 +12,10 @@ import (
 var wg sync.WaitGroup
 
 type Consumer struct {
-	PrefixName string
-	Queue      string
-	Workers    int
-	Args       amqp.Table
-	Option     *consumerOption
-	Conn       *Connection
+	Workers int
+	Queue   *queue
+	Option  *consumerOption
+	Conn    *Connection
 }
 
 type consumerOption struct {
@@ -81,21 +79,21 @@ func WithCsQueueType(queueType string) *csOption {
 	}
 }
 
-func NewConsumer(conn *Connection, prefixName string, workers int, opts ...csOption) *Consumer {
+func NewConsumer(conn *Connection, que *queue, workers int, opts ...*csOption) *Consumer {
 	options := defaultconsumerOption
 	for _, opt := range opts {
 		opt.apply(options)
 	}
-	args := make(amqp.Table, 1)
-	args["x-queue-type"] = "classic"
+
+	if conn.config.PrefetchCount > 0 {
+		options.AutoAck = true
+	}
 
 	return &Consumer{
-		PrefixName: prefixName,
-		Queue:      prefixName,
-		Workers:    workers,
-		Option:     options,
-		Args:       args,
-		Conn:       conn,
+		Queue:   que,
+		Workers: workers,
+		Option:  options,
+		Conn:    conn,
 	}
 }
 
@@ -131,52 +129,55 @@ func (consumer *Consumer) stream(delivery <-chan amqp.Delivery, handler Consumer
 
 // StartConsumer will open specified consumers
 // When queue is empty, the queue uses default configuration
-func (consumer *Consumer) Start(handler ConsumerHandler, que *queue) {
+func (consumer *Consumer) Start(handler ConsumerHandler) {
 	consumer.Conn.config.Logger.Println("Attempting to start new consumers")
-	select {
-	case <-consumer.Conn.session.ready:
-	case <-time.After(waitInitDelay):
-		consumer.Conn.config.Logger.Panic(errNotConnected)
+
+	if !consumer.Conn.session.isReady {
+		select {
+		case <-consumer.Conn.session.ready:
+		case <-time.After(waitInitDelay):
+			consumer.Conn.config.Logger.Panic(errNotConnected)
+		}
 	}
-	var queName, routingKey, exchangeName string
-	var durable, autoDelete, exclusive, noWait bool
-	if que == nil {
-		que = NewQueue(consumer.Conn.session.Exchange.Name, consumer.PrefixName, consumer.PrefixName)
-	}
-	queName = que.Name
-	routingKey = que.RoutingKey
-	exchangeName = que.Exchange
-	durable = que.Option.Durable
-	autoDelete = que.Option.AutoDelete
-	exclusive = que.Option.Exclusive
-	noWait = que.Option.NoWait
+
+	que := consumer.Queue
+	queName := que.Name
+	routingKey := que.RoutingKey
+	exchangeName := que.Exchange
+	durable := que.Option.Durable
+	autoDelete := que.Option.AutoDelete
+	exclusive := que.Option.Exclusive
+	noWait := que.Option.NoWait
 
 	_, err := consumer.Conn.session.channel.QueueDeclare(
-		queName,       // name of the queue
-		durable,       // durable
-		autoDelete,    // delete when unused
-		exclusive,     // exclusive
-		noWait,        // noWait
-		consumer.Args, // arguments
+		queName,    // name of the queue
+		durable,    // durable
+		autoDelete, // delete when unused
+		exclusive,  // exclusive
+		noWait,     // noWait
+		que.Args,   // arguments
 	)
 	if err != nil {
-		consumer.Conn.config.Logger.Printf("Failed to initialize queue, error: %s\n", err)
+		consumer.Conn.config.Logger.Panicf("Failed to initialize queue, error: %s\n", err)
 	}
 
-	if err := consumer.Conn.session.channel.QueueBind(
-		queName,      // name of the queue
-		routingKey,   // bindingKey
-		exchangeName, // sourceExchange
-		noWait,       // noWait
-		nil,          // arguments
-	); err != nil {
-		consumer.Conn.config.Logger.Printf("Failed to bind queue, error: %s\n", err)
+	for _, key := range routingKey {
+		if err := consumer.Conn.session.channel.QueueBind(
+			queName,      // name of the queue
+			key,          // bindingKey
+			exchangeName, // sourceExchange
+			noWait,       // noWait
+			nil,          // arguments
+		); err != nil {
+			consumer.Conn.config.Logger.Panicf("Failed to bind queue, error: %s\n", err)
+		}
+
 	}
 
 	wg.Add(consumer.Workers)
 	for i := 0; i < consumer.Workers; i++ {
 		delivery, err := consumer.Conn.session.channel.Consume(
-			consumer.Queue,                     // name
+			queName,                            // name
 			fmt.Sprintf("%s_%d", queName, i+1), // consumerTag,
 			consumer.Option.AutoAck,            // noAck
 			consumer.Option.Exclusive,          // exclusive
@@ -185,7 +186,7 @@ func (consumer *Consumer) Start(handler ConsumerHandler, que *queue) {
 			nil,                                // arguments
 		)
 		if err != nil {
-			consumer.Conn.config.Logger.Printf("Failed to initialize consume, error: %s\n", err)
+			consumer.Conn.config.Logger.Panicf("Failed to initialize consume, error: %s\n", err)
 		}
 		go consumer.stream(delivery, handler)
 	}

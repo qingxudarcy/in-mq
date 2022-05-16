@@ -9,10 +9,8 @@ import (
 	"time"
 )
 
-func errorHandler(s []byte) {
+func printHandler(s []byte) {
 	fmt.Println(string(s))
-	var a []int
-	a[2] = 1
 }
 
 func createConsumerConn() *mq.Connection {
@@ -29,23 +27,14 @@ func createProducerConn() *mq.Connection {
 	return rabbitmq
 }
 
-func TestErrorHandler(t *testing.T) {
+func TestPrintHandler(t *testing.T) {
 	conn := createConsumerConn()
-	consumer := mq.NewConsumer(conn, consumerName, workers)
-	go consumer.Start(errorHandler, nil)
-	producer := mq.NewProducer(consumerName, "Test Success!", createProducerConn())
+	queue := mq.NewQueue(exchangeName, queueName, []string{routingKey})
+	consumer := mq.NewConsumer(conn, queue, workers)
+	go consumer.Start(printHandler)
+	producer := mq.NewProducer(routingKey, []byte("Test Success!"), createProducerConn())
 	if err := producer.Push(); err != nil {
 		t.Fatalf("Push message is error: %s", err)
 	}
 	time.Sleep(5 * time.Second)
-}
-
-func TestCloseConsumer(t *testing.T) {
-	conn := createConsumerConn()
-	consumer := mq.NewConsumer(conn, consumerName, workers)
-	go consumer.Start(errorHandler, nil)
-	time.Sleep(10 * time.Second)
-	if err := conn.Close(); err != nil {
-		t.Fatalf("close consumer is err %s", err)
-	}
 }
